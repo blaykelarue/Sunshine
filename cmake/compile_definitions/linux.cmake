@@ -251,15 +251,13 @@ if(GIO_FOUND)
     list(APPEND PLATFORM_LIBRARIES ${GIO_LIBRARIES})
 endif()
 
-# Pipewire
+# Pipewire (screen capture via KWin/Portal, and the virtual microphone used by microphone redirection)
+pkg_check_modules(PIPEWIRE libpipewire-0.3 REQUIRED)
+include_directories(SYSTEM ${PIPEWIRE_INCLUDE_DIRS})
+list(APPEND PLATFORM_LIBRARIES ${PIPEWIRE_LIBRARIES})
+list(APPEND PLATFORM_TARGET_FILES
+        "${CMAKE_SOURCE_DIR}/src/platform/linux/virtual_mic.cpp")
 if(${SUNSHINE_ENABLE_KWIN} OR ${SUNSHINE_ENABLE_PORTAL})
-    pkg_check_modules(PIPEWIRE libpipewire-0.3 REQUIRED)
-else()
-    set(PIPEWIRE_FOUND OFF)
-endif()
-if(PIPEWIRE_FOUND)
-    include_directories(SYSTEM ${PIPEWIRE_INCLUDE_DIRS})
-    list(APPEND PLATFORM_LIBRARIES ${PIPEWIRE_LIBRARIES})
     list(APPEND PLATFORM_TARGET_FILES
             "${CMAKE_SOURCE_DIR}/src/platform/linux/pipewire.cpp")
 endif()

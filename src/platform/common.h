@@ -860,6 +860,30 @@ namespace platf {
   };
 
   /**
+   * @brief Host-side virtual microphone that plays client microphone audio to local applications.
+   */
+  class virtual_mic_t {
+  public:
+    /**
+     * @brief Queue mono 48 kHz signed 16-bit PCM for the virtual microphone. Never blocks.
+     *
+     * @param samples PCM samples.
+     * @param frame_count Number of mono samples.
+     * @return Number of samples queued, 0 when the frame was dropped because the queue is full, or -1 on error.
+     */
+    virtual int write(const std::int16_t *samples, std::size_t frame_count) = 0;
+
+    virtual ~virtual_mic_t() = default;
+  };
+
+  /**
+   * @brief Create the host virtual microphone device. The device exists until the returned object is destroyed.
+   *
+   * @return Virtual microphone, or nullptr when the platform cannot provide one.
+   */
+  std::unique_ptr<virtual_mic_t> virtual_mic();
+
+  /**
    * @brief Platform-specific input backend context.
    */
   struct input_raw_t;

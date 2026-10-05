@@ -19,6 +19,12 @@ namespace stream {
   constexpr auto VIDEO_STREAM_PORT = 9;  ///< GameStream base-port offset used for the video UDP stream.
   constexpr auto CONTROL_PORT = 10;  ///< GameStream base-port offset used for the control channel.
   constexpr auto AUDIO_STREAM_PORT = 11;  ///< GameStream base-port offset used for the audio UDP stream.
+  constexpr auto MIC_STREAM_PORT = 12;  ///< GameStream base-port offset used for the client microphone UDP stream.
+
+  /**
+   * @brief Encryption feature bit for client microphone packets (Sunshine protocol extension used by VoidLink).
+   */
+  constexpr std::uint32_t SS_ENC_MIC = 0x08;
 
   struct session_t;
 
@@ -37,6 +43,8 @@ namespace stream {
     int videoQosType;  ///< Video QoS type.
 
     uint32_t encryptionFlagsEnabled;  ///< Bitmask of GameStream encryption features enabled for the session.
+
+    bool micRedirect {false};  ///< Whether the client set up the encrypted microphone stream for this session.
 
     std::optional<int> gcmap;  ///< Optional game-controller mapping override from the launch request.
   };

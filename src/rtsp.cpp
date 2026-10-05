@@ -944,6 +944,12 @@ namespace rtsp_stream {
       }
     }
 
+    // Microphone packets are always encrypted with the session key; plaintext microphone streams are not accepted.
+    if (config::audio.stream_mic) {
+      encryption_flags_supported |= stream::SS_ENC_MIC;
+      encryption_flags_requested |= stream::SS_ENC_MIC;
+    }
+
     // Report supported and required encryption flags
     ss << "a=x-ss-general.encryptionSupported:" << encryption_flags_supported << std::endl;
     ss << "a=x-ss-general.encryptionRequested:" << encryption_flags_requested << std::endl;
@@ -1029,6 +1035,9 @@ namespace rtsp_stream {
       port = net::map_port(stream::VIDEO_STREAM_PORT);
     } else if (type == "control"sv) {
       port = net::map_port(stream::CONTROL_PORT);
+    } else if (type == "mic"sv && config::audio.stream_mic) {
+      port = net::map_port(stream::MIC_STREAM_PORT);
+      session.setup_mic = true;
     } else {
       cmd_not_found(sock, session, std::move(req));
 
@@ -1163,6 +1172,14 @@ namespace rtsp_stream {
       // Legacy clients use nvFeatureFlags to indicate support for audio encryption
       if (util::from_view(args.at("x-nv-general.featureFlags"sv)) & 0x20) {
         config.encryptionFlagsEnabled |= SS_ENC_AUDIO;
+      }
+
+      if (session.setup_mic) {
+        if (config.encryptionFlagsEnabled & stream::SS_ENC_MIC) {
+          config.micRedirect = true;
+        } else {
+          BOOST_LOG(warning) << "Ignoring microphone stream that the client did not agree to encrypt"sv;
+        }
       }
 
       // Limit the packetsize to avoid fragmentation with clients that cannot configure this value

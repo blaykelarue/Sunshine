@@ -393,6 +393,8 @@
     "search_options": "Search configuration options...",
     "stream_audio": "Stream Audio",
     "stream_audio_desc": "Whether to stream audio or not. Disabling this can be useful for streaming headless displays as second monitors.",
+    "stream_mic": "Microphone Redirection",
+    "stream_mic_desc": "Accept microphone audio from clients that support it (such as VoidLink) and play it into a \"Sunshine Microphone\" input device on the host. Linux with PipeWire only.",
     "sunshine_name": "Sunshine Name",
     "sunshine_name_desc": "The name displayed by Moonlight. If not specified, the PC's hostname is used",
     "sw_preset": "SW Presets",

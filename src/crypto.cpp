@@ -146,6 +146,18 @@ namespace crypto {
       return 0;
     }
 
+    static int init_decrypt_cbc(cipher_ctx_t &ctx, aes_t *key, aes_t *iv, bool padding) {
+      ctx.reset(EVP_CIPHER_CTX_new());
+
+      if (EVP_DecryptInit_ex(ctx.get(), EVP_aes_128_cbc(), nullptr, key->data(), iv->data()) != 1) {
+        return -1;
+      }
+
+      EVP_CIPHER_CTX_set_padding(ctx.get(), padding);
+
+      return 0;
+    }
+
     int gcm_t::decrypt(const std::string_view &tagged_cipher, std::vector<std::uint8_t> &plaintext, aes_t *iv) {
       if (!decrypt_ctx && init_decrypt_gcm(decrypt_ctx, &key, iv, padding)) {
         return -1;
@@ -308,6 +320,39 @@ namespace crypto {
       }
 
       return update_outlen + final_outlen;
+    }
+
+    /**
+     * Decrypts AES-128-CBC ciphertext with the caller's IV. With padding enabled, a ciphertext whose
+     * PKCS#7 padding does not verify is rejected, which callers use to discard packets sealed with another key.
+     */
+    int cbc_t::decrypt(const std::string_view &cipher, std::vector<std::uint8_t> &plaintext, aes_t *iv) {
+      if (!decrypt_ctx && init_decrypt_cbc(decrypt_ctx, &key, iv, padding)) {
+        return -1;
+      }
+
+      // Calling with cipher == nullptr results in a parameter change
+      // without requiring a reallocation of the internal cipher ctx.
+      if (EVP_DecryptInit_ex(decrypt_ctx.get(), nullptr, nullptr, nullptr, iv->data()) != 1) {
+        return -1;
+      }
+
+      // EVP_DecryptUpdate may write up to one block more than its input.
+      plaintext.resize(cipher.size() + 16);
+
+      int final_outlen;
+      int update_outlen;
+
+      if (EVP_DecryptUpdate(decrypt_ctx.get(), plaintext.data(), &update_outlen, (const std::uint8_t *) cipher.data(), (int) cipher.size()) != 1) {
+        return -1;
+      }
+
+      if (EVP_DecryptFinal_ex(decrypt_ctx.get(), plaintext.data() + update_outlen, &final_outlen) != 1) {
+        return -1;
+      }
+
+      plaintext.resize(update_outlen + final_outlen);
+      return 0;
     }
 
     ecb_t::ecb_t(const aes_t &key, bool padding):

@@ -1550,6 +1550,11 @@ namespace platf {
     return control;
   }
 
+  std::unique_ptr<virtual_mic_t> virtual_mic() {
+    BOOST_LOG(error) << "Microphone redirection is not supported on Windows"sv;
+    return nullptr;
+  }
+
   std::unique_ptr<deinit_t> init() {
     if (dxgi::init()) {
       return nullptr;

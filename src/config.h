@@ -229,6 +229,7 @@ namespace config {
     std::string virtual_sink;  ///< Virtual audio sink for audio routing
     bool stream;  ///< Enable audio streaming to clients
     bool install_steam_drivers;  ///< Install Steam audio drivers for enhanced compatibility
+    bool stream_mic;  ///< Accept client microphone audio and play it into a host virtual microphone
   };
 
   /**

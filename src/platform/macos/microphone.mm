@@ -158,4 +158,9 @@ namespace platf {
   std::unique_ptr<audio_control_t> audio_control() {
     return std::make_unique<macos_audio_control_t>();
   }
+
+  std::unique_ptr<virtual_mic_t> virtual_mic() {
+    BOOST_LOG(error) << "Microphone redirection is not supported on macOS";
+    return nullptr;
+  }
 }  // namespace platf

@@ -897,6 +897,34 @@ supported on the current platform.
     </tr>
 </table>
 
+### stream_mic
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Accept microphone audio from clients that support microphone redirection (such as VoidLink on iOS)
+            and play it into a host input device named "Sunshine Microphone". The device exists while a client
+            with microphone redirection is connected; select it as the microphone in your applications.
+            Microphone packets are always encrypted with the session key and are received on UDP port
+            [port](#port) + 12 (48001 by default).
+            @note{This option is only supported on Linux with PipeWire.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            enabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            stream_mic = disabled
+            @endcode</td>
+    </tr>
+</table>
+
 ### install_steam_audio_drivers
 
 <table>

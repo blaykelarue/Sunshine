@@ -28,6 +28,7 @@ extern "C" {
 #include "globals.h"
 #include "input.h"
 #include "logging.h"
+#include "mic_redirect.h"
 #include "network.h"
 #include "platform/common.h"
 #include "process.h"
@@ -481,6 +482,8 @@ namespace stream {
     udp::socket audio_sock {io_context};  ///< UDP socket bound for audio packet transmission.
 
     control_server_t control_server;  ///< ENet server for GameStream control packets.
+
+    std::unique_ptr<mic_redirect::receiver_t> mic;  ///< Client microphone receiver; null when microphone redirection is disabled or unavailable.
   };
 
   /**
@@ -2015,6 +2018,13 @@ namespace stream {
 
     ctx.video_thread = std::jthread {videoBroadcastThread, std::ref(ctx.video_sock)};
     ctx.audio_thread = std::jthread {audioBroadcastThread, std::ref(ctx.audio_sock)};
+    if (config::audio.stream_mic) {
+      ctx.mic = mic_redirect::receiver_t::start(net::map_port(MIC_STREAM_PORT));
+      if (!ctx.mic) {
+        BOOST_LOG(warning) << "Microphone redirection is unavailable for this stream"sv;
+      }
+    }
+
     ctx.control_thread = std::jthread {controlBroadcastThread, &ctx.control_server};
 
     ctx.recv_thread = std::jthread {recvThread, std::ref(ctx)};
@@ -2054,6 +2064,8 @@ namespace stream {
     ctx.audio_thread.join();
     BOOST_LOG(debug) << "Waiting for main control thread to end..."sv;
     ctx.control_thread.join();
+    BOOST_LOG(debug) << "Waiting for microphone thread to end..."sv;
+    ctx.mic.reset();
     BOOST_LOG(debug) << "All broadcasting threads ended"sv;
 
     broadcast_shutdown_event->reset();
@@ -2230,6 +2242,9 @@ namespace stream {
       session.videoThread.join();
       BOOST_LOG(debug) << "Waiting for audio to end..."sv;
       session.audioThread.join();
+      if (session.config.micRedirect && session.broadcast_ref->mic) {
+        session.broadcast_ref->mic->remove_session(session.launch_session_id);
+      }
       BOOST_LOG(debug) << "Waiting for control to end..."sv;
       session.controlEnd.view();
       // Reset input on session stop to avoid stuck repeated keys
@@ -2287,6 +2302,10 @@ namespace stream {
       session.audio.peer.port(0);
 
       session.pingTimeout = std::chrono::steady_clock::now() + config::stream.ping_timeout;
+
+      if (session.config.micRedirect && session.broadcast_ref->mic) {
+        session.broadcast_ref->mic->add_session(session.launch_session_id, addr, session.audio.cipher.key, session.audio.avRiKeyId);
+      }
 
       session.audioThread = std::jthread {audioThread, &session};
       session.videoThread = std::jthread {videoThread, &session};

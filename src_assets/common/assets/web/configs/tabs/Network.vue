@@ -102,12 +102,12 @@ const effectivePort = computed(() => +config.value?.port ?? defaultMoonlightPort
           <td>{{+effectivePort + 9}} - {{+effectivePort + 11}}</td>
           <td></td>
         </tr>
-        <!--            <tr>-->
-        <!--              &lt;!&ndash; Mic &ndash;&gt;-->
-        <!--              <td>UDP</td>-->
-        <!--              <td>{{+effectivePort + 13}}</td>-->
-        <!--              <td></td>-->
-        <!--            </tr>-->
+        <tr>
+          <!-- Microphone redirection -->
+          <td>{{ $t('config.port_udp') }}</td>
+          <td>{{+effectivePort + 12}}</td>
+          <td>{{ $t('config.stream_mic') }}</td>
+        </tr>
         </tbody>
       </table>
       <!-- add warning about exposing web ui to the internet -->
