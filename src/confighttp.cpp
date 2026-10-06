@@ -1202,6 +1202,48 @@ namespace confighttp {
   }
 
   /**
+   * @brief Start the configured `fork_update_cmd` and return without waiting for it.
+   * @param response The HTTP response object.
+   * @param request The HTTP request object.
+   *
+   * @api_examples{/api/fork/update| POST| null}
+   */
+  void forkUpdate(const resp_https_t &response, const req_https_t &request) {
+    if (!authenticate(response, request)) {
+      return;
+    }
+
+    std::string client_id = get_client_id(request);
+    if (!validate_csrf_token(response, request, client_id)) {
+      return;
+    }
+
+    print_req(request);
+
+    const auto &cmd = config::sunshine.fork_update_cmd;
+    if (cmd.empty()) {
+      bad_request(response, request, "fork_update_cmd is not configured");
+      return;
+    }
+
+    auto working_dir = boost::filesystem::path(lizardbyte::common::get_env("HOME"));
+    std::error_code ec;
+    boost::process::v1::environment env = boost::this_process::environment();
+    auto child = platf::run_command(false, false, cmd, working_dir, env, nullptr, ec, nullptr);
+    if (ec) {
+      BOOST_LOG(error) << "Couldn't start fork update command ["sv << cmd << "]: "sv << ec.message();
+      bad_request(response, request, "Couldn't start the fork update command: " + ec.message());
+      return;
+    }
+    BOOST_LOG(info) << "Started fork update command ["sv << cmd << ']';
+    child.detach();
+
+    nlohmann::json output_tree;
+    output_tree["status"] = true;
+    send_response(response, output_tree);
+  }
+
+  /**
    * @brief Delete an application.
    * @param response The HTTP response object.
    * @param request The HTTP request object.
@@ -2365,6 +2407,7 @@ namespace confighttp {
     server.resource["^/api/clients/update$"]["POST"] = updateClient;
     server.resource["^/api/config$"]["GET"] = getConfig;
     server.resource["^/api/config$"]["POST"] = saveConfig;
+    server.resource["^/api/fork/update$"]["POST"] = forkUpdate;
     server.resource["^/api/configLocale$"]["GET"] = getLocale;
     server.resource["^/api/covers/([0-9]+)$"]["GET"] = getCover;
     server.resource["^/api/covers/upload$"]["POST"] = uploadCover;

@@ -104,11 +104,19 @@
                 <span>{{ $t('index.new_stable') }}</span>
                 <h5 class="mb-0">{{ githubVersion.release.name }}</h5>
               </div>
-              <a class="btn btn-success flex-shrink-0" :href="githubVersion.release.html_url" target="_blank">
-                <download :size="18" class="icon"></download>
-                {{ $t('index.download') }}
-              </a>
+              <div class="d-flex gap-2 flex-shrink-0">
+                <button class="btn btn-primary" v-if="forkUpdateConfigured" :disabled="forkUpdatePressed" @click="startForkUpdate">
+                  <wrench :size="18" class="icon"></wrench>
+                  {{ $t('index.fork_update') }}
+                </button>
+                <a class="btn btn-success" :href="githubVersion.release.html_url" target="_blank">
+                  <download :size="18" class="icon"></download>
+                  {{ $t('index.download') }}
+                </a>
+              </div>
             </div>
+            <div class="alert alert-success" v-if="forkUpdateStatus === true">{{ $t('index.fork_update_started') }}</div>
+            <div class="alert alert-danger" v-if="forkUpdateStatus === false">{{ $t('index.fork_update_failed') }}</div>
 
             <!-- body row (full width) -->
             <div class="markdown-body release-notes" v-html="convertMarkdownToHtml(githubVersion.release.body)"></div>
@@ -131,6 +139,7 @@
   import Navbar from './Navbar.vue'
   import ResourceCard from './ResourceCard.vue'
   import SunshineVersion from './sunshine_version'
+  import { apiFetch } from './fetch_utils'
   import {
     AlertCircle,
     AlertTriangle,
@@ -181,6 +190,9 @@
         virtualhid: null,
         virtualhidLicense: null,
         vigembus: null,
+        forkUpdateConfigured: false,
+        forkUpdatePressed: false,
+        forkUpdateStatus: null,
       }
     },
     async created() {
@@ -190,6 +202,7 @@
         this.platform = config.platform;
         this.controllerEnabled = config.controller !== "disabled";
         this.gamepadDriver = config.gamepad_driver || '';
+        this.forkUpdateConfigured = !!config.fork_update_cmd;
         this.version = new SunshineVersion(null, config.version);
         console.log("Version: ", this.version.version)
         this.githubVersion = new SunshineVersion(await fetch("https://api.github.com/repos/LizardByte/Sunshine/releases/latest").then((r) => r.json()), null);
@@ -302,6 +315,29 @@
       }
     },
     methods: {
+      /**
+       * Run the host's configured fork update command (fork_update_cmd).
+       */
+      startForkUpdate() {
+        this.forkUpdatePressed = true;
+        this.forkUpdateStatus = null;
+        apiFetch("./api/fork/update", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          }
+        })
+          .then((r) => r.json())
+          .then((r) => {
+            this.forkUpdateStatus = r.status === true;
+          })
+          .catch(() => {
+            this.forkUpdateStatus = false;
+          })
+          .finally(() => {
+            this.forkUpdatePressed = false;
+          });
+      },
       /**
        * Build a home-page notice for the current Windows virtual-input state.
        *

@@ -133,6 +133,14 @@ function removeCmd(index) {
       </button>
     </div>
 
+    <!-- Fork Update Command -->
+    <div class="mb-3">
+      <label for="fork_update_cmd" class="form-label">{{ $t('config.fork_update_cmd') }}</label>
+      <input type="text" class="form-control monospace" id="fork_update_cmd"
+             v-model="config.fork_update_cmd" />
+      <div class="form-text">{{ $t('config.fork_update_cmd_desc') }}</div>
+    </div>
+
     <!-- Notify Pre-Releases -->
     <Checkbox class="mb-3"
               id="notify_pre_releases"

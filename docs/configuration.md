@@ -242,6 +242,33 @@ supported on the current platform.
     </tr>
 </table>
 
+### fork_update_cmd
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Command started by the "Rebase Fork" button on the web UI home page. The button appears next to the
+            new-release notice when the latest official Sunshine release is newer than this build, and only when
+            this option is set. The command is run once without a shell, in the home directory, with Sunshine's
+            environment, and Sunshine does not wait for it.
+            @tip{Sunshine runs as a systemd user service; a command that should outlive a Sunshine restart
+            (for example one that reinstalls Sunshine) has to leave the service's cgroup, e.g. via `systemd-run --user`.}
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            fork_update_cmd = /home/user/.local/bin/sunshine-fork-update.sh
+            @endcode</td>
+    </tr>
+</table>
+
 ### notify_pre_releases
 
 <table>

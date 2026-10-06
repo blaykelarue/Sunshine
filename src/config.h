@@ -388,6 +388,7 @@ namespace config {
     bool notify_pre_releases;  ///< Notify users about pre-release updates.
     bool system_tray;  ///< Enable the system tray integration.
     std::vector<prep_cmd_t> prep_cmds;  ///< Preparation commands executed around application launch.
+    std::string fork_update_cmd;  ///< Command run by the web UI's fork update button; the button is hidden when empty.
 
     // List of allowed origins for CSRF protection (e.g., "https://example.com,https://app.example.com")
     // Comma-separated list of additional origins. Default includes localhost variants and web UI port.

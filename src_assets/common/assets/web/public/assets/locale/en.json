@@ -255,6 +255,8 @@
     "file_apps_desc": "The file where current apps of Sunshine are stored.",
     "file_state": "State File",
     "file_state_desc": "The file where current state of Sunshine is stored",
+    "fork_update_cmd": "Fork Update Command",
+    "fork_update_cmd_desc": "Command started by the \"Rebase Fork\" button that appears on the home page when a new official Sunshine release is available. Leave empty to hide the button.",
     "gamepad": "Emulated Gamepad Type",
     "gamepad_auto": "Automatic selection options",
     "gamepad_desc": "Choose which type of gamepad to emulate on the host",
@@ -467,6 +469,9 @@
   "index": {
     "description": "Sunshine is a self-hosted game stream host for Moonlight.",
     "download": "Download",
+    "fork_update": "Rebase Fork",
+    "fork_update_failed": "Couldn't start the fork update command. Check the Sunshine log for details.",
+    "fork_update_started": "Started the fork update command on the host.",
     "choose_gamepad_driver": "Choose Gamepad Drivers",
     "fix_now": "Fix Now",
     "installed_version_not_stable": "You are running a pre-release version of Sunshine. You may experience bugs or other issues. Please report any issues you encounter. Thank you for helping to make Sunshine a better software!",

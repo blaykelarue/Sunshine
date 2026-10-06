@@ -890,6 +890,7 @@ namespace config {
     false,  // notify_pre_releases
     true,  // system_tray
     {},  // prep commands
+    {},  // fork_update_cmd
     {},  // csrf_allowed_origins
   };
 
@@ -1854,6 +1855,7 @@ namespace config {
 
     bool_f(vars, "notify_pre_releases", sunshine.notify_pre_releases);
     bool_f(vars, "system_tray", sunshine.system_tray);
+    string_f(vars, "fork_update_cmd", sunshine.fork_update_cmd);
 
     int port = sunshine.port;
     int_between_f(vars, "port"s, port, {1024 + nvhttp::PORT_HTTPS, 65535 - rtsp_stream::RTSP_SETUP_PORT});
