@@ -812,6 +812,7 @@ TEST_F(VirtualHidDeviceTest, TranslatesPenButtonsToolsAndTransitions) {
   EXPECT_FLOAT_EQ(state.distance, -1.0F);
   EXPECT_NEAR(state.tilt_x, -45.0F, 0.001F);
   EXPECT_NEAR(state.tilt_y, 0.0F, 0.001F);
+  EXPECT_FLOAT_EQ(state.twist, -1.0F);
   EXPECT_EQ(state.transition, lvh::PointerTransition::update);
   EXPECT_EQ(state.viewport.offset_x, 1);
   EXPECT_EQ(state.viewport.offset_y, 2);
@@ -828,6 +829,7 @@ TEST_F(VirtualHidDeviceTest, TranslatesPenButtonsToolsAndTransitions) {
   pen.tilt = LI_TILT_UNKNOWN;
   pen.rotation = LI_ROT_UNKNOWN;
   pen.pressureOrDistance = 0.4F;
+  pen.barrelRoll = 270;
   platf::virtualhid::pen_update(*client(), viewport, pen);
   state = client()->pen->last_submitted_tool();
   EXPECT_EQ(state.tool, lvh::PenToolType::eraser);
@@ -835,6 +837,7 @@ TEST_F(VirtualHidDeviceTest, TranslatesPenButtonsToolsAndTransitions) {
   EXPECT_FLOAT_EQ(state.distance, 0.4F);
   EXPECT_FLOAT_EQ(state.tilt_x, 0.0F);
   EXPECT_FLOAT_EQ(state.tilt_y, 0.0F);
+  EXPECT_FLOAT_EQ(state.twist, 270.0F);
   EXPECT_TRUE(client()->pressed_pen_buttons.contains(lvh::PenButton::tertiary));
   EXPECT_FALSE(client()->pressed_pen_buttons.contains(lvh::PenButton::primary));
 

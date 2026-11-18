@@ -968,6 +968,7 @@ namespace platf::virtualhid {
     state.distance = is_touching ? -1.0F : std::clamp(pen.pressureOrDistance, 0.0F, 1.0F);
     state.tilt_x = tilt_x;
     state.tilt_y = tilt_y;
+    state.twist = pen.barrelRoll == LI_ROT_UNKNOWN ? -1.0F : static_cast<float>(pen.barrelRoll);
     state.transition = transition;
     state.viewport = pointer_viewport(touch_port);
     log_failure("submit libvirtualhid pen state"sv, context.pen->place_tool(state));

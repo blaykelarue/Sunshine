@@ -25,6 +25,7 @@ extern "C" {
 // local includes
 #include "src/config.h"
 #include "src/input.h"
+#include "src/pen_barrel_roll.h"
 #include "src/platform/virtualhid_input.h"
 #include "src/utility.h"
 
@@ -189,6 +190,7 @@ TEST(InputPacketValidationTest, EnforcesEveryFixedPacketSize) {
     input_packet_spec_t {MULTI_CONTROLLER_MAGIC_GEN5, sizeof(NV_MULTI_CONTROLLER_PACKET)},
     input_packet_spec_t {SS_TOUCH_MAGIC, sizeof(SS_TOUCH_PACKET)},
     input_packet_spec_t {SS_PEN_MAGIC, sizeof(SS_PEN_PACKET)},
+    input_packet_spec_t {input::pen_barrel_roll::magic, sizeof(input::pen_barrel_roll::packet_t)},
     input_packet_spec_t {SS_CONTROLLER_ARRIVAL_MAGIC, sizeof(SS_CONTROLLER_ARRIVAL_PACKET)},
     input_packet_spec_t {SS_CONTROLLER_TOUCH_MAGIC, sizeof(SS_CONTROLLER_TOUCH_PACKET)},
     input_packet_spec_t {SS_CONTROLLER_MOTION_MAGIC, sizeof(SS_CONTROLLER_MOTION_PACKET)},
@@ -240,6 +242,7 @@ TEST_F(InputGamepadSessionTest, RejectsMalformedBatchablePacketsAtQueueIngress) 
     input_packet_spec_t {MULTI_CONTROLLER_MAGIC_GEN5, sizeof(NV_MULTI_CONTROLLER_PACKET)},
     input_packet_spec_t {SS_TOUCH_MAGIC, sizeof(SS_TOUCH_PACKET)},
     input_packet_spec_t {SS_PEN_MAGIC, sizeof(SS_PEN_PACKET)},
+    input_packet_spec_t {input::pen_barrel_roll::magic, sizeof(input::pen_barrel_roll::packet_t)},
     input_packet_spec_t {SS_CONTROLLER_TOUCH_MAGIC, sizeof(SS_CONTROLLER_TOUCH_PACKET)},
     input_packet_spec_t {SS_CONTROLLER_MOTION_MAGIC, sizeof(SS_CONTROLLER_MOTION_PACKET)},
   };

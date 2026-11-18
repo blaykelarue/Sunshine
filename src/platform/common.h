@@ -505,6 +505,7 @@ namespace platf {
     float pressureOrDistance;  ///< Distance for hover and pressure for contact.
     float contactAreaMajor;  ///< Major axis of the reported contact area.
     float contactAreaMinor;  ///< Minor axis of the reported contact area.
+    std::uint16_t barrelRoll = LI_ROT_UNKNOWN;  ///< Barrel twist in degrees (0..359) or LI_ROT_UNKNOWN.
   };
 
   /**

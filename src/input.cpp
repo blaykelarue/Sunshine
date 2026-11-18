@@ -32,6 +32,7 @@ extern "C" {
 #include "globals.h"
 #include "input.h"
 #include "logging.h"
+#include "pen_barrel_roll.h"
 #include "platform/common.h"
 #include "platform/virtualhid_input.h"
 #include "thread_pool.h"
@@ -691,6 +692,10 @@ namespace input {
         break;
       case SS_PEN_MAGIC:
         print((PSS_PEN_PACKET) payload);
+        break;
+      case pen_barrel_roll::magic:
+        print(&((pen_barrel_roll::packet_t *) payload)->pen);
+        BOOST_LOG(debug) << "barrelRoll ["sv << util::endian::little(((pen_barrel_roll::packet_t *) payload)->barrelRoll) << ']';
         break;
       case SS_CONTROLLER_ARRIVAL_MAGIC:
         print((PSS_CONTROLLER_ARRIVAL_PACKET) payload);
@@ -1433,8 +1438,9 @@ namespace input {
    * @brief Called to pass a pen message to the platform backend.
    * @param input The input context pointer.
    * @param packet The pen packet.
+   * @param barrel_roll Little-endian barrel twist from a VoidLink barrel roll packet, or unknown.
    */
-  void passthrough(std::shared_ptr<input_t> &input, PSS_PEN_PACKET packet) {
+  void passthrough(std::shared_ptr<input_t> &input, PSS_PEN_PACKET packet, std::uint16_t barrel_roll = pen_barrel_roll::unknown) {
     const auto pointer_data = prepare_absolute_pointer_data(input, packet);
     if (!pointer_data) {
       return;
@@ -1452,6 +1458,10 @@ namespace input {
       pointer_data->contact_area.first,
       pointer_data->contact_area.second,
     };
+    barrel_roll = util::endian::little(barrel_roll);
+    if (barrel_roll != pen_barrel_roll::unknown) {
+      pen.barrelRoll = barrel_roll % 360;
+    }
 
     platf::pen_update(input->client_context.get(), pointer_data->touch_port, pen);
   }
@@ -1726,6 +1736,8 @@ namespace input {
         return validate_fixed_input_packet<SS_TOUCH_PACKET>(packet, declared_size);
       case SS_PEN_MAGIC:
         return validate_fixed_input_packet<SS_PEN_PACKET>(packet, declared_size);
+      case pen_barrel_roll::magic:
+        return validate_fixed_input_packet<pen_barrel_roll::packet_t>(packet, declared_size);
       case SS_CONTROLLER_ARRIVAL_MAGIC:
         return validate_fixed_input_packet<SS_CONTROLLER_ARRIVAL_PACKET>(packet, declared_size);
       case SS_CONTROLLER_TOUCH_MAGIC:
@@ -2010,6 +2022,16 @@ namespace input {
         return batch((PSS_TOUCH_PACKET) dest, (PSS_TOUCH_PACKET) src);
       case SS_PEN_MAGIC:
         return batch((PSS_PEN_PACKET) dest, (PSS_PEN_PACKET) src);
+      case pen_barrel_roll::magic:
+        {
+          auto dest_packet = (pen_barrel_roll::packet_t *) dest;
+          auto src_packet = (pen_barrel_roll::packet_t *) src;
+          const auto result = batch(&dest_packet->pen, &src_packet->pen);
+          if (result == batch_result_e::batched) {
+            *dest_packet = *src_packet;
+          }
+          return result;
+        }
       case SS_CONTROLLER_TOUCH_MAGIC:
         return batch((PSS_CONTROLLER_TOUCH_PACKET) dest, (PSS_CONTROLLER_TOUCH_PACKET) src);
       case SS_CONTROLLER_MOTION_MAGIC:
@@ -2102,6 +2124,12 @@ namespace input {
       case SS_PEN_MAGIC:
         passthrough(input, (PSS_PEN_PACKET) payload);
         break;
+      case pen_barrel_roll::magic:
+        {
+          auto packet = (pen_barrel_roll::packet_t *) payload;
+          passthrough(input, &packet->pen, packet->barrelRoll);
+          break;
+        }
       case SS_CONTROLLER_ARRIVAL_MAGIC:
         passthrough(input, (PSS_CONTROLLER_ARRIVAL_PACKET) payload);
         break;
