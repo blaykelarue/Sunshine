@@ -9,6 +9,7 @@
 // standard includes
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -53,6 +54,18 @@ namespace {
     if (!packet.empty()) {
       std::memcpy(packet.data(), &header, std::min(packet.size(), sizeof(header)));
     }
+    return packet;
+  }
+
+  /**
+   * @brief Create a valid pen packet for one client pen event.
+   *
+   * @param event_type Moonlight touch event type.
+   * @return Raw packet bytes.
+   */
+  std::vector<std::uint8_t> make_pen_packet(std::uint8_t event_type) {
+    auto packet = make_input_packet(SS_PEN_MAGIC, sizeof(SS_PEN_PACKET) - sizeof(std::uint32_t), sizeof(SS_PEN_PACKET));
+    packet[offsetof(SS_PEN_PACKET, eventType)] = event_type;
     return packet;
   }
 
@@ -248,6 +261,27 @@ TEST_F(InputGamepadSessionTest, RejectsMalformedBatchablePacketsAtQueueIngress) 
     input::passthrough(stream_input, std::move(oversized_declared_size));
     EXPECT_EQ(input::testing::queued_input_packet_count(stream_input), valid_packet_count) << "magic=" << magic;
   }
+}
+
+TEST_F(InputGamepadSessionTest, KeepsQueuedPenContactSamplesAndCoalescesHover) {
+  ASSERT_FALSE(task_pool.running());
+  auto stream_input = input::alloc(std::make_shared<safe::mail_raw_t>(), "pen-batching-client");
+  ASSERT_NE(stream_input, nullptr);
+
+  for (int sample = 0; sample < 3; ++sample) {
+    input::passthrough(stream_input, make_pen_packet(LI_TOUCH_EVENT_MOVE));
+  }
+  for (const std::size_t remaining : std::array<std::size_t, 3> {2, 1, 0}) {
+    input::testing::process_next_input_packet(stream_input);
+    EXPECT_EQ(input::testing::queued_input_packet_count(stream_input), remaining);
+  }
+
+  for (int sample = 0; sample < 3; ++sample) {
+    input::passthrough(stream_input, make_pen_packet(LI_TOUCH_EVENT_HOVER));
+  }
+  input::passthrough(stream_input, make_pen_packet(LI_TOUCH_EVENT_DOWN));
+  input::testing::process_next_input_packet(stream_input);
+  EXPECT_EQ(input::testing::queued_input_packet_count(stream_input), 1);
 }
 
 TEST_F(InputGamepadSessionTest, ReusesGamepadsAcrossPauseAndDestroysThemOnTermination) {

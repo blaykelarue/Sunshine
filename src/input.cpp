@@ -1895,8 +1895,9 @@ namespace input {
    * @return The status of the batching operation.
    */
   batch_result_e batch(PSS_PEN_PACKET dest, PSS_PEN_PACKET src) {
-    // Only batch hover or move events
-    if (dest->eventType != LI_TOUCH_EVENT_MOVE && dest->eventType != LI_TOUCH_EVENT_HOVER) {
+    // Only batch hover events. Every contact sample is stroke geometry, so dropping queued
+    // move events would leave visible gaps in drawn lines.
+    if (dest->eventType != LI_TOUCH_EVENT_HOVER) {
       return batch_result_e::terminate_batch;
     }
 
@@ -2399,6 +2400,10 @@ namespace input {
 
       std::lock_guard lock {input->input_queue_lock};
       return input->input_queue.size();
+    }
+
+    void process_next_input_packet(const std::shared_ptr<input_t> &input) {
+      passthrough_next_message(input);
     }
   }  // namespace testing
 #endif
