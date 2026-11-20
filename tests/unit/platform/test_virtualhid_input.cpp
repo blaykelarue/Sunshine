@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <set>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -869,6 +870,63 @@ TEST_F(VirtualHidDeviceTest, TranslatesPenButtonsToolsAndTransitions) {
   platf::virtualhid::pen_update(*client(), viewport, pen);
   client()->pen.reset();
   platf::virtualhid::pen_update(*client(), viewport, pen);
+}
+
+TEST_F(VirtualHidDeviceTest, TranslatesTouchpadFramesAndClicks) {
+  config::input.native_pen_touch = false;
+  EXPECT_FALSE(platf::virtualhid::touchpad_enabled(context()->runtime->capabilities()));
+  EXPECT_EQ(platf::virtualhid::client_context_t {*context()}.trackpad, nullptr);
+
+  config::input.native_pen_touch = true;
+  platf::virtualhid::client_context_t touchpad_client {*context()};
+#ifndef __linux__
+  EXPECT_EQ(touchpad_client.trackpad, nullptr);
+  GTEST_SKIP() << "the precision touchpad is only offered on Linux";
+#endif
+  ASSERT_NE(touchpad_client.trackpad, nullptr);
+  auto &trackpad = *touchpad_client.trackpad;
+
+  // Two fingers land in one frame; a pointer id above INT32_MAX still maps to a valid contact id.
+  platf::touchpad_frame_t frame;
+  frame.contactCount = 2;
+  frame.contacts[0] = {LI_TOUCH_EVENT_DOWN, 3, 0.25F, 0.5F, 0.5F};
+  frame.contacts[1] = {LI_TOUCH_EVENT_DOWN, 0x80000004U, 1.5F, -0.5F, 2.0F};
+  platf::virtualhid::touchpad_update(touchpad_client, frame);
+  EXPECT_EQ(trackpad.submit_count(), 1U);
+  EXPECT_EQ(touchpad_client.active_trackpad_contacts, (std::set<std::int32_t> {3, 4}));
+  const auto last = trackpad.last_submitted_contact();
+  EXPECT_EQ(last.id, 4);
+  EXPECT_FLOAT_EQ(last.x, 1.0F);
+  EXPECT_FLOAT_EQ(last.y, 0.0F);
+  EXPECT_FLOAT_EQ(last.pressure, 1.0F);
+
+  // Clicking while moving: the contacts are placed, then the button goes down.
+  frame.contactCount = 1;
+  frame.contacts[0].eventType = LI_TOUCH_EVENT_MOVE;
+  frame.buttonPressed = true;
+  platf::virtualhid::touchpad_update(touchpad_client, frame);
+  EXPECT_EQ(trackpad.submit_count(), 3U);
+  EXPECT_TRUE(touchpad_client.trackpad_button_pressed);
+
+  // Lifting a finger with the click released.
+  frame.contacts[0].eventType = LI_TOUCH_EVENT_UP;
+  frame.buttonPressed = false;
+  platf::virtualhid::touchpad_update(touchpad_client, frame);
+  EXPECT_EQ(trackpad.submit_count(), 5U);
+  EXPECT_FALSE(touchpad_client.trackpad_button_pressed);
+  EXPECT_EQ(touchpad_client.active_trackpad_contacts, (std::set<std::int32_t> {4}));
+
+  // Hover-only frames change nothing.
+  frame.contacts[0].eventType = LI_TOUCH_EVENT_HOVER;
+  platf::virtualhid::touchpad_update(touchpad_client, frame);
+  EXPECT_EQ(trackpad.submit_count(), 5U);
+
+  // Cancel-all releases every remaining contact.
+  frame.contacts[0].eventType = LI_TOUCH_EVENT_CANCEL_ALL;
+  platf::virtualhid::touchpad_update(touchpad_client, frame);
+  EXPECT_EQ(trackpad.submit_count(), 6U);
+  EXPECT_EQ(trackpad.last_submitted_contact().id, 4);
+  EXPECT_TRUE(touchpad_client.active_trackpad_contacts.empty());
 }
 
 TEST_F(VirtualHidDeviceTest, PlatformWrappersForwardToVirtualHidContext) {

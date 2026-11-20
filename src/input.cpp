@@ -36,6 +36,7 @@ extern "C" {
 #include "platform/common.h"
 #include "platform/virtualhid_input.h"
 #include "thread_pool.h"
+#include "touchpad_wire.h"
 #include "utility.h"
 
 // Win32 WHEEL_DELTA constant
@@ -1435,6 +1436,56 @@ namespace input {
   }
 
   /**
+   * @brief Called to pass a single-contact precision touchpad message to the platform backend.
+   * @param input The input context pointer.
+   * @param packet The touchpad packet.
+   */
+  void passthrough(std::shared_ptr<input_t> &input, touchpad_wire::packet_t *packet) {
+    if (!config::input.mouse) {
+      return;
+    }
+
+    platf::touchpad_frame_t frame;
+    frame.contactCount = 1;
+    frame.buttonPressed = (packet->buttonState & touchpad_wire::button_primary) != 0;
+    frame.contacts[0] = {
+      packet->eventType,
+      util::endian::little(packet->pointerId),
+      from_clamped_netfloat(packet->x, 0.0f, 1.0f),
+      from_clamped_netfloat(packet->y, 0.0f, 1.0f),
+      from_clamped_netfloat(packet->pressure, 0.0f, 1.0f),
+    };
+    platf::touchpad_update(input->client_context.get(), frame);
+  }
+
+  /**
+   * @brief Called to pass a multi-contact precision touchpad frame to the platform backend.
+   * @param input The input context pointer.
+   * @param packet The touchpad frame packet.
+   */
+  void passthrough(std::shared_ptr<input_t> &input, touchpad_wire::frame_packet_t *packet) {
+    if (!config::input.mouse) {
+      return;
+    }
+
+    static_assert(std::tuple_size_v<decltype(platf::touchpad_frame_t::contacts)> >= touchpad_wire::max_frame_contacts);
+    platf::touchpad_frame_t frame;
+    frame.contactCount = static_cast<std::uint8_t>(std::min<std::size_t>(packet->contactCount, touchpad_wire::max_frame_contacts));
+    frame.buttonPressed = (packet->buttonState & touchpad_wire::button_primary) != 0;
+    for (std::size_t i = 0; i < frame.contactCount; ++i) {
+      const auto &contact = packet->contacts[i];
+      frame.contacts[i] = {
+        contact.eventType,
+        util::endian::little(contact.pointerId),
+        util::endian::little(contact.x) / 65535.0f,
+        util::endian::little(contact.y) / 65535.0f,
+        util::endian::little(contact.pressure) / 65535.0f,
+      };
+    }
+    platf::touchpad_update(input->client_context.get(), frame);
+  }
+
+  /**
    * @brief Called to pass a pen message to the platform backend.
    * @param input The input context pointer.
    * @param packet The pen packet.
@@ -1738,6 +1789,10 @@ namespace input {
         return validate_fixed_input_packet<SS_PEN_PACKET>(packet, declared_size);
       case pen_barrel_roll::magic:
         return validate_fixed_input_packet<pen_barrel_roll::packet_t>(packet, declared_size);
+      case touchpad_wire::magic:
+        return validate_fixed_input_packet<touchpad_wire::packet_t>(packet, declared_size);
+      case touchpad_wire::frame_magic:
+        return validate_fixed_input_packet<touchpad_wire::frame_packet_t>(packet, declared_size);
       case SS_CONTROLLER_ARRIVAL_MAGIC:
         return validate_fixed_input_packet<SS_CONTROLLER_ARRIVAL_PACKET>(packet, declared_size);
       case SS_CONTROLLER_TOUCH_MAGIC:
@@ -1995,6 +2050,39 @@ namespace input {
   }
 
   /**
+   * @brief Batch two touchpad frame messages.
+   *
+   * Only frames that move the same contacts with the same button state are merged, so presses,
+   * lifts and clicks are always delivered.
+   *
+   * @param dest The original packet to batch into.
+   * @param src A later packet to attempt to batch.
+   * @return The status of the batching operation.
+   */
+  batch_result_e batch(touchpad_wire::frame_packet_t *dest, touchpad_wire::frame_packet_t *src) {
+    const auto moves_only = [](const touchpad_wire::frame_packet_t *packet) {
+      if (packet->contactCount == 0 || packet->contactCount > touchpad_wire::max_frame_contacts) {
+        return false;
+      }
+      return std::all_of(packet->contacts, packet->contacts + packet->contactCount, [](const auto &contact) {
+        return contact.eventType == LI_TOUCH_EVENT_MOVE;
+      });
+    };
+    if (!moves_only(dest) || !moves_only(src) || dest->contactCount != src->contactCount || dest->buttonState != src->buttonState) {
+      return batch_result_e::terminate_batch;
+    }
+    for (std::size_t i = 0; i < dest->contactCount; ++i) {
+      if (dest->contacts[i].pointerId != src->contacts[i].pointerId) {
+        return batch_result_e::terminate_batch;
+      }
+    }
+
+    // Take the latest positions
+    *dest = *src;
+    return batch_result_e::batched;
+  }
+
+  /**
    * @brief Batch two input messages.
    * @param dest The original packet to batch into.
    * @param src A later packet to attempt to batch.
@@ -2032,6 +2120,8 @@ namespace input {
           }
           return result;
         }
+      case touchpad_wire::frame_magic:
+        return batch((touchpad_wire::frame_packet_t *) dest, (touchpad_wire::frame_packet_t *) src);
       case SS_CONTROLLER_TOUCH_MAGIC:
         return batch((PSS_CONTROLLER_TOUCH_PACKET) dest, (PSS_CONTROLLER_TOUCH_PACKET) src);
       case SS_CONTROLLER_MOTION_MAGIC:
@@ -2130,6 +2220,12 @@ namespace input {
           passthrough(input, &packet->pen, packet->barrelRoll);
           break;
         }
+      case touchpad_wire::magic:
+        passthrough(input, (touchpad_wire::packet_t *) payload);
+        break;
+      case touchpad_wire::frame_magic:
+        passthrough(input, (touchpad_wire::frame_packet_t *) payload);
+        break;
       case SS_CONTROLLER_ARRIVAL_MAGIC:
         passthrough(input, (PSS_CONTROLLER_ARRIVAL_PACKET) payload);
         break;

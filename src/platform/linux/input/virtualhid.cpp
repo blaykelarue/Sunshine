@@ -28,6 +28,9 @@ namespace platf {
     if (const auto &capabilities = runtime->capabilities(); config::input.native_pen_touch && (capabilities.supports_touchscreen || capabilities.supports_pen_tablet)) {
       caps |= platform_caps::pen_touch;
     }
+    if (virtualhid::touchpad_enabled(runtime->capabilities())) {
+      caps |= platform_caps::touchpad | platform_caps::touchpad_frame;
+    }
     if (virtualhid::configured_gamepad_supports_controller_extensions()) {
       caps |= platform_caps::controller_touch;
     }

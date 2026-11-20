@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
 #include <limits>
 #include <memory>
 #include <string>
@@ -27,6 +28,7 @@ extern "C" {
 #include "src/input.h"
 #include "src/pen_barrel_roll.h"
 #include "src/platform/virtualhid_input.h"
+#include "src/touchpad_wire.h"
 #include "src/utility.h"
 
 namespace {
@@ -67,6 +69,32 @@ namespace {
   std::vector<std::uint8_t> make_pen_packet(std::uint8_t event_type) {
     auto packet = make_input_packet(SS_PEN_MAGIC, sizeof(SS_PEN_PACKET) - sizeof(std::uint32_t), sizeof(SS_PEN_PACKET));
     packet[offsetof(SS_PEN_PACKET, eventType)] = event_type;
+    return packet;
+  }
+
+  /**
+   * @brief Create a valid touchpad frame packet in which every contact has the same event.
+   *
+   * @param event_type Moonlight touch event type for each contact.
+   * @param pointer_ids Contact identifiers, at most five.
+   * @param button_state Pressed touchpad buttons.
+   * @return Raw packet bytes.
+   */
+  std::vector<std::uint8_t> make_touchpad_frame(std::uint8_t event_type, std::initializer_list<std::uint32_t> pointer_ids, std::uint8_t button_state = 0) {
+    using frame_t = input::touchpad_wire::frame_packet_t;
+    auto packet = make_input_packet(input::touchpad_wire::frame_magic, sizeof(frame_t) - sizeof(std::uint32_t), sizeof(frame_t));
+    frame_t frame {};
+    std::memcpy(&frame, packet.data(), sizeof(frame));
+    frame.contactCount = static_cast<std::uint8_t>(pointer_ids.size());
+    frame.buttonState = button_state;
+    std::size_t i = 0;
+    for (const auto id : pointer_ids) {
+      frame.contacts[i].eventType = event_type;
+      frame.contacts[i].pointerId = util::endian::little(id);
+      frame.contacts[i].x = util::endian::little<std::uint16_t>(32768);
+      ++i;
+    }
+    std::memcpy(packet.data(), &frame, sizeof(frame));
     return packet;
   }
 
@@ -191,6 +219,8 @@ TEST(InputPacketValidationTest, EnforcesEveryFixedPacketSize) {
     input_packet_spec_t {SS_TOUCH_MAGIC, sizeof(SS_TOUCH_PACKET)},
     input_packet_spec_t {SS_PEN_MAGIC, sizeof(SS_PEN_PACKET)},
     input_packet_spec_t {input::pen_barrel_roll::magic, sizeof(input::pen_barrel_roll::packet_t)},
+    input_packet_spec_t {input::touchpad_wire::magic, sizeof(input::touchpad_wire::packet_t)},
+    input_packet_spec_t {input::touchpad_wire::frame_magic, sizeof(input::touchpad_wire::frame_packet_t)},
     input_packet_spec_t {SS_CONTROLLER_ARRIVAL_MAGIC, sizeof(SS_CONTROLLER_ARRIVAL_PACKET)},
     input_packet_spec_t {SS_CONTROLLER_TOUCH_MAGIC, sizeof(SS_CONTROLLER_TOUCH_PACKET)},
     input_packet_spec_t {SS_CONTROLLER_MOTION_MAGIC, sizeof(SS_CONTROLLER_MOTION_PACKET)},
@@ -243,6 +273,7 @@ TEST_F(InputGamepadSessionTest, RejectsMalformedBatchablePacketsAtQueueIngress) 
     input_packet_spec_t {SS_TOUCH_MAGIC, sizeof(SS_TOUCH_PACKET)},
     input_packet_spec_t {SS_PEN_MAGIC, sizeof(SS_PEN_PACKET)},
     input_packet_spec_t {input::pen_barrel_roll::magic, sizeof(input::pen_barrel_roll::packet_t)},
+    input_packet_spec_t {input::touchpad_wire::frame_magic, sizeof(input::touchpad_wire::frame_packet_t)},
     input_packet_spec_t {SS_CONTROLLER_TOUCH_MAGIC, sizeof(SS_CONTROLLER_TOUCH_PACKET)},
     input_packet_spec_t {SS_CONTROLLER_MOTION_MAGIC, sizeof(SS_CONTROLLER_MOTION_PACKET)},
   };
@@ -285,6 +316,32 @@ TEST_F(InputGamepadSessionTest, KeepsQueuedPenContactSamplesAndCoalescesHover) {
   input::passthrough(stream_input, make_pen_packet(LI_TOUCH_EVENT_DOWN));
   input::testing::process_next_input_packet(stream_input);
   EXPECT_EQ(input::testing::queued_input_packet_count(stream_input), 1);
+}
+
+TEST_F(InputGamepadSessionTest, CoalescesOnlyMatchingTouchpadMoveFrames) {
+  ASSERT_FALSE(task_pool.running());
+  config::input.native_pen_touch = true;
+  auto stream_input = input::alloc(std::make_shared<safe::mail_raw_t>(), "touchpad-batching-client");
+  ASSERT_NE(stream_input, nullptr);
+
+  // Queued moves of the same fingers merge, but a lift is always delivered.
+  for (int sample = 0; sample < 3; ++sample) {
+    input::passthrough(stream_input, make_touchpad_frame(LI_TOUCH_EVENT_MOVE, {1, 2}));
+  }
+  input::passthrough(stream_input, make_touchpad_frame(LI_TOUCH_EVENT_UP, {1}));
+  input::testing::process_next_input_packet(stream_input);
+  EXPECT_EQ(input::testing::queued_input_packet_count(stream_input), 1);
+  input::testing::process_next_input_packet(stream_input);
+  EXPECT_EQ(input::testing::queued_input_packet_count(stream_input), 0);
+
+  // Different fingers, or a click starting, keep frames apart.
+  input::passthrough(stream_input, make_touchpad_frame(LI_TOUCH_EVENT_MOVE, {1, 2}));
+  input::passthrough(stream_input, make_touchpad_frame(LI_TOUCH_EVENT_MOVE, {1, 3}));
+  input::passthrough(stream_input, make_touchpad_frame(LI_TOUCH_EVENT_MOVE, {1, 3}, input::touchpad_wire::button_primary));
+  for (const std::size_t remaining : std::array<std::size_t, 3> {2, 1, 0}) {
+    input::testing::process_next_input_packet(stream_input);
+    EXPECT_EQ(input::testing::queued_input_packet_count(stream_input), remaining);
+  }
 }
 
 TEST_F(InputGamepadSessionTest, ReusesGamepadsAcrossPauseAndDestroysThemOnTermination) {

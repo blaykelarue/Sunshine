@@ -5,6 +5,7 @@
 #pragma once
 
 // standard includes
+#include <array>
 #include <bitset>
 #include <filesystem>
 #include <functional>
@@ -404,6 +405,14 @@ namespace platf {
      * @brief Capability bit indicating controller touchpad and motion support.
      */
     constexpr caps_t controller_touch = 0x02;  // Controller touch and motion events
+    /**
+     * @brief Capability bit for single-contact precision touchpad packets (VoidLink's touchpad mode).
+     */
+    constexpr caps_t touchpad = 0x10;
+    /**
+     * @brief Capability bit for multi-contact precision touchpad frame packets (VoidLink's touchpad mode).
+     */
+    constexpr caps_t touchpad_frame = 0x20;
   };  // namespace platform_caps
 
   /**
@@ -506,6 +515,26 @@ namespace platf {
     float contactAreaMajor;  ///< Major axis of the reported contact area.
     float contactAreaMinor;  ///< Minor axis of the reported contact area.
     std::uint16_t barrelRoll = LI_ROT_UNKNOWN;  ///< Barrel twist in degrees (0..359) or LI_ROT_UNKNOWN.
+  };
+
+  /**
+   * @brief One contact of a precision touchpad frame from the client.
+   */
+  struct touchpad_contact_t {
+    std::uint8_t eventType;  ///< Moonlight touch event type.
+    std::uint32_t pointerId;  ///< Client-provided contact identifier.
+    float x;  ///< Horizontal position within the touchpad, 0..1.
+    float y;  ///< Vertical position within the touchpad, 0..1.
+    float pressure;  ///< Pressure, 0..1.
+  };
+
+  /**
+   * @brief The touchpad contacts that changed at one moment, plus the click button.
+   */
+  struct touchpad_frame_t {
+    std::uint8_t contactCount = 0;  ///< Valid entries in `contacts`.
+    bool buttonPressed = false;  ///< Whether the touchpad's click button is down.
+    std::array<touchpad_contact_t, 5> contacts {};  ///< Contacts; entries past `contactCount` are unused.
   };
 
   /**
@@ -1254,6 +1283,13 @@ namespace platf {
    * @param pen The pen event.
    */
   void pen_update(client_input_t *input, const touch_port_t &touch_port, const pen_input_t &pen);
+
+  /**
+   * @brief Send precision touchpad contacts to the OS.
+   * @param input The client-specific input context.
+   * @param frame The contacts that changed at one moment, plus the click button state.
+   */
+  void touchpad_update(client_input_t *input, const touchpad_frame_t &frame);
 
   /**
    * @brief Send a gamepad touch event to the OS.

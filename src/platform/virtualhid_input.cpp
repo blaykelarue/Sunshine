@@ -17,6 +17,7 @@
 #include <random>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 // local includes
 #include "src/config.h"
@@ -520,6 +521,17 @@ namespace platf::virtualhid {
         log_failure("create libvirtualhid pen tablet"sv, created.status);
       }
     }
+    if (touchpad_enabled(capabilities)) {
+      lvh::CreateTrackpadOptions options;
+      options.profile = lvh::profiles::trackpad();
+      options.stable_id = "sunshine-trackpad";
+      auto created = global->runtime->create_trackpad(options);
+      if (created) {
+        trackpad = std::move(created.trackpad);
+      } else {
+        log_failure("create libvirtualhid trackpad"sv, created.status);
+      }
+    }
   }
 
   std::unique_ptr<lvh::Runtime> create_runtime(lvh::BackendKind backend) {
@@ -974,6 +986,71 @@ namespace platf::virtualhid {
     log_failure("submit libvirtualhid pen state"sv, context.pen->place_tool(state));
   }
 
+  bool touchpad_enabled([[maybe_unused]] const lvh::BackendCapabilities &capabilities) {
+#ifdef __linux__
+    return config::input.native_pen_touch && capabilities.supports_trackpad;
+#else
+    return false;
+#endif
+  }
+
+  void touchpad_update(client_context_t &context, const touchpad_frame_t &frame) {
+    if (!context.trackpad) {
+      return;
+    }
+
+    std::vector<lvh::TouchContact> placed;
+    std::vector<std::int32_t> released;
+    bool cancel_all = false;
+    const auto count = std::min<std::size_t>(frame.contactCount, frame.contacts.size());
+    for (std::size_t i = 0; i < count; ++i) {
+      const auto &contact = frame.contacts[i];
+      // libvirtualhid contact ids must not be negative
+      const auto id = static_cast<std::int32_t>(contact.pointerId & 0x7FFFFFFFU);
+      switch (contact.eventType) {
+        case LI_TOUCH_EVENT_DOWN:
+        case LI_TOUCH_EVENT_MOVE:
+          placed.push_back({
+            .id = id,
+            .x = std::clamp(contact.x, 0.0F, 1.0F),
+            .y = std::clamp(contact.y, 0.0F, 1.0F),
+            .pressure = std::clamp(contact.pressure, 0.0F, 1.0F),
+          });
+          context.active_trackpad_contacts.insert(id);
+          break;
+        case LI_TOUCH_EVENT_UP:
+        case LI_TOUCH_EVENT_CANCEL:
+        case LI_TOUCH_EVENT_HOVER_LEAVE:
+          released.push_back(id);
+          context.active_trackpad_contacts.erase(id);
+          break;
+        case LI_TOUCH_EVENT_CANCEL_ALL:
+          cancel_all = true;
+          break;
+        default:
+          break;
+      }
+    }
+    if (cancel_all) {
+      placed.clear();
+      released.assign(context.active_trackpad_contacts.begin(), context.active_trackpad_contacts.end());
+      context.active_trackpad_contacts.clear();
+    }
+
+    // A click is pressed while its fingers are down and released before they lift, like a physical clickpad.
+    if (!frame.buttonPressed && context.trackpad_button_pressed) {
+      log_failure("release libvirtualhid trackpad button"sv, context.trackpad->button(false));
+      context.trackpad_button_pressed = false;
+    }
+    if (!placed.empty() || !released.empty()) {
+      log_failure("submit libvirtualhid trackpad frame"sv, context.trackpad->submit_frame(placed, released));
+    }
+    if (frame.buttonPressed && !context.trackpad_button_pressed) {
+      log_failure("press libvirtualhid trackpad button"sv, context.trackpad->button(true));
+      context.trackpad_button_pressed = true;
+    }
+  }
+
   bool configured_gamepad_supports_touchpad() {
     if (config::input.gamepad == "auto"sv) {
       return true;
@@ -1079,6 +1156,10 @@ namespace platf {
 
   void pen_update(client_input_t *input, const touch_port_t &touch_port, const pen_input_t &pen) {
     virtualhid::pen_update(virtualhid::get_client_context(input), touch_port, pen);
+  }
+
+  void touchpad_update(client_input_t *input, const touchpad_frame_t &frame) {
+    virtualhid::touchpad_update(virtualhid::get_client_context(input), frame);
   }
 
 #ifndef _WIN32

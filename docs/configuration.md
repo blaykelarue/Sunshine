@@ -747,6 +747,10 @@ supported on the current platform.
             When enabled, Sunshine will pass through native pen/touch events from Moonlight clients.
             <br>
             This can be useful to disable for older applications without native pen/touch support.
+            <br>
+            On Linux this also offers clients a precision touchpad: VoidLink's touchpad mode with "Touchpad
+            Gestures" then drives a virtual touchpad, so desktop touchpad gestures (two-finger scrolling,
+            pinching, multi-finger swipes) work. Tap-to-click follows the desktop's touchpad settings.
         </td>
     </tr>
     <tr>

@@ -53,7 +53,7 @@ namespace platf::virtualhid {
   };
 
   /**
-   * @brief Per-client virtual touch and pen state.
+   * @brief Per-client virtual touch, pen and touchpad state.
    */
   struct client_context_t {
     /**
@@ -66,8 +66,11 @@ namespace platf::virtualhid {
     input_context_t *global = nullptr;  ///< Shared global input context.
     std::unique_ptr<lvh::Touchscreen> touch;  ///< Per-client touchscreen.
     std::unique_ptr<lvh::PenTablet> pen;  ///< Per-client pen tablet.
+    std::unique_ptr<lvh::Trackpad> trackpad;  ///< Per-client precision touchpad, when advertised.
     std::set<std::int32_t> active_touches;  ///< Active touchscreen contacts.
     std::set<lvh::PenButton> pressed_pen_buttons;  ///< Active pen tablet buttons.
+    std::set<std::int32_t> active_trackpad_contacts;  ///< Active touchpad contacts.
+    bool trackpad_button_pressed = false;  ///< Whether the touchpad's click button is down.
   };
 
   /**
@@ -308,6 +311,24 @@ namespace platf::virtualhid {
    * @param pen Pen event.
    */
   void pen_update(client_context_t &context, const touch_port_t &touch_port, const pen_input_t &pen);
+
+  /**
+   * @brief Return whether the host offers clients a precision touchpad.
+   *
+   * Decides both the advertised touchpad capability and whether each client gets a virtual trackpad.
+   *
+   * @param capabilities libvirtualhid backend capabilities.
+   * @return True on Linux when native pen/touch input is enabled and the backend can create trackpads.
+   */
+  bool touchpad_enabled(const lvh::BackendCapabilities &capabilities);
+
+  /**
+   * @brief Submit the touchpad contacts that changed at one moment, plus the click button.
+   *
+   * @param context Client context.
+   * @param frame Touchpad frame.
+   */
+  void touchpad_update(client_context_t &context, const touchpad_frame_t &frame);
 
   /**
    * @brief Return whether the configured gamepad profile can expose touchpad input.
