@@ -9,13 +9,16 @@
 // standard includes
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
 #include <limits>
 #include <memory>
+#include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 // moonlight-common-c includes
@@ -24,12 +27,17 @@ extern "C" {
 }
 
 // local includes
+#include "src/apple_pencil_gesture.h"
 #include "src/config.h"
+#include "src/globals.h"
 #include "src/input.h"
 #include "src/pen_barrel_roll.h"
 #include "src/platform/virtualhid_input.h"
 #include "src/touchpad_wire.h"
 #include "src/utility.h"
+
+// lib includes
+#include <boost/endian/conversion.hpp>
 
 namespace {
   /**
@@ -96,6 +104,36 @@ namespace {
     }
     std::memcpy(packet.data(), &frame, sizeof(frame));
     return packet;
+  }
+
+  /**
+   * @brief Create a valid Apple Pencil gesture packet.
+   *
+   * @param event_type Gesture event type.
+   * @param x Normalized horizontal Pencil position.
+   * @param y Normalized vertical Pencil position.
+   * @return Raw packet bytes.
+   */
+  std::vector<std::uint8_t> make_pencil_gesture(std::uint8_t event_type, float x = 0.25F, float y = 0.5F) {
+    using packet_t = input::apple_pencil_gesture::packet_t;
+    auto packet = make_input_packet(input::apple_pencil_gesture::magic, sizeof(packet_t) - sizeof(std::uint32_t), sizeof(packet_t));
+    packet[offsetof(packet_t, eventType)] = event_type;
+    boost::endian::endian_store<float, sizeof(float), boost::endian::order::little>(packet.data() + offsetof(packet_t, x), x);
+    boost::endian::endian_store<float, sizeof(float), boost::endian::order::little>(packet.data() + offsetof(packet_t, y), y);
+    return packet;
+  }
+
+  /**
+   * @brief Give a stream a 1000x1000 touch port, so absolute pen input reaches the virtual pen.
+   *
+   * @param mail Mailbox the stream input was allocated with.
+   */
+  void raise_square_touch_port(const safe::mail_t &mail) {
+    input::touch_port_t touch_port {};
+    touch_port.width = touch_port.height = touch_port.logical_width = touch_port.logical_height = 1000;
+    touch_port.env_width = touch_port.env_height = touch_port.env_logical_width = touch_port.env_logical_height = 1000;
+    touch_port.scalar_inv = touch_port.scalar_tpcoords = 1.0F;
+    mail->event<input::touch_port_t>(mail::touch_port)->raise(touch_port);
   }
 
   /**
@@ -221,6 +259,7 @@ TEST(InputPacketValidationTest, EnforcesEveryFixedPacketSize) {
     input_packet_spec_t {input::pen_barrel_roll::magic, sizeof(input::pen_barrel_roll::packet_t)},
     input_packet_spec_t {input::touchpad_wire::magic, sizeof(input::touchpad_wire::packet_t)},
     input_packet_spec_t {input::touchpad_wire::frame_magic, sizeof(input::touchpad_wire::frame_packet_t)},
+    input_packet_spec_t {input::apple_pencil_gesture::magic, sizeof(input::apple_pencil_gesture::packet_t)},
     input_packet_spec_t {SS_CONTROLLER_ARRIVAL_MAGIC, sizeof(SS_CONTROLLER_ARRIVAL_PACKET)},
     input_packet_spec_t {SS_CONTROLLER_TOUCH_MAGIC, sizeof(SS_CONTROLLER_TOUCH_PACKET)},
     input_packet_spec_t {SS_CONTROLLER_MOTION_MAGIC, sizeof(SS_CONTROLLER_MOTION_PACKET)},
@@ -342,6 +381,115 @@ TEST_F(InputGamepadSessionTest, CoalescesOnlyMatchingTouchpadMoveFrames) {
     input::testing::process_next_input_packet(stream_input);
     EXPECT_EQ(input::testing::queued_input_packet_count(stream_input), remaining);
   }
+}
+
+TEST_F(InputGamepadSessionTest, PencilDoubleTapClicksAPenSideButtonAtThePencil) {
+  ASSERT_FALSE(task_pool.running());
+  auto mail = std::make_shared<safe::mail_raw_t>();
+  auto stream_input = input::alloc(mail, "pencil-double-tap-client");
+  ASSERT_NE(stream_input, nullptr);
+  raise_square_touch_port(mail);
+  auto &client = platf::virtualhid::get_client_context(input::testing::client_input(stream_input));
+  ASSERT_NE(client.pen, nullptr);
+
+  // Ignored while disabled
+  config::input.apple_pencil_gesture = "disabled";
+  input::passthrough(stream_input, make_pencil_gesture(input::apple_pencil_gesture::double_tap));
+  input::testing::process_next_input_packet(stream_input);
+  EXPECT_EQ(client.pen->submit_count(), 0U);
+
+  // The out-of-range pen hovers at the Pencil, clicks its first side button, then leaves again
+  config::input.apple_pencil_gesture = "pen_button_1";
+  input::passthrough(stream_input, make_pencil_gesture(input::apple_pencil_gesture::double_tap, 0.25F, 0.5F));
+  input::testing::process_next_input_packet(stream_input);
+  EXPECT_EQ(client.pen->submit_count(), 6U);  // hover, press + move, release + move, leave
+  EXPECT_TRUE(client.pressed_pen_buttons.empty());
+  const auto last = client.pen->last_submitted_tool();
+  EXPECT_EQ(last.transition, lvh::PointerTransition::leave);
+  EXPECT_FLOAT_EQ(last.x, 0.25F);
+  EXPECT_FLOAT_EQ(last.y, 0.5F);
+}
+
+TEST_F(InputGamepadSessionTest, PencilSqueezeHoldsAPenSideButtonThroughRealPenInput) {
+  ASSERT_FALSE(task_pool.running());
+  auto mail = std::make_shared<safe::mail_raw_t>();
+  auto stream_input = input::alloc(mail, "pencil-squeeze-client");
+  ASSERT_NE(stream_input, nullptr);
+  raise_square_touch_port(mail);
+  auto &client = platf::virtualhid::get_client_context(input::testing::client_input(stream_input));
+  config::input.apple_pencil_gesture = "pen_button_2";
+
+  input::passthrough(stream_input, make_pencil_gesture(input::apple_pencil_gesture::squeeze_begin));
+  input::testing::process_next_input_packet(stream_input);
+  EXPECT_EQ(client.pressed_pen_buttons, (std::set<lvh::PenButton> {lvh::PenButton::secondary}));
+
+  // Real pen packets carry no buttons, but the squeeze keeps the side button down
+  input::passthrough(stream_input, make_pen_packet(LI_TOUCH_EVENT_HOVER));
+  input::testing::process_next_input_packet(stream_input);
+  EXPECT_EQ(client.pressed_pen_buttons, (std::set<lvh::PenButton> {lvh::PenButton::secondary}));
+
+  // A squeeze change does nothing; the end releases the button and leaves the real pen in range
+  input::passthrough(stream_input, make_pencil_gesture(input::apple_pencil_gesture::squeeze_change));
+  input::passthrough(stream_input, make_pencil_gesture(input::apple_pencil_gesture::squeeze_end));
+  input::testing::process_next_input_packet(stream_input);
+  input::testing::process_next_input_packet(stream_input);
+  EXPECT_TRUE(client.pressed_pen_buttons.empty());
+  EXPECT_EQ(client.pen->last_submitted_tool().transition, lvh::PointerTransition::update);
+}
+
+TEST_F(InputGamepadSessionTest, PencilGesturesPressTheConfiguredKeyCombo) {
+  ASSERT_FALSE(task_pool.running());
+  auto stream_input = input::alloc(std::make_shared<safe::mail_raw_t>(), "pencil-key-client");
+  ASSERT_NE(stream_input, nullptr);
+  std::vector<input::testing::keyboard_event_t> keys;
+  input::testing::set_keyboard_sink([&keys](const auto &event) {
+    keys.push_back(event);
+  });
+  config::input.keybindings.clear();
+  config::input.key_repeat_delay = std::chrono::milliseconds::zero();  // a held squeeze must not schedule key repeats
+  config::input.apple_pencil_gesture = "key";
+  config::input.apple_pencil_gesture_keys = {0x11, 0x5A};
+
+  // A double-tap presses the combo in order and releases it in reverse
+  input::passthrough(stream_input, make_pencil_gesture(input::apple_pencil_gesture::double_tap));
+  input::testing::process_next_input_packet(stream_input);
+  const auto summary = [&keys] {
+    std::vector<std::pair<std::uint16_t, bool>> out;
+    for (const auto &key : keys) {
+      out.emplace_back(key.key_code, key.release);
+    }
+    keys.clear();
+    return out;
+  };
+  EXPECT_EQ(summary(), (std::vector<std::pair<std::uint16_t, bool>> {{0x11, false}, {0x5A, false}, {0x5A, true}, {0x11, true}}));
+
+  // A squeeze holds the combo until it ends
+  input::passthrough(stream_input, make_pencil_gesture(input::apple_pencil_gesture::squeeze_begin));
+  input::testing::process_next_input_packet(stream_input);
+  EXPECT_EQ(summary(), (std::vector<std::pair<std::uint16_t, bool>> {{0x11, false}, {0x5A, false}}));
+  input::passthrough(stream_input, make_pencil_gesture(input::apple_pencil_gesture::squeeze_cancel));
+  input::testing::process_next_input_packet(stream_input);
+  EXPECT_EQ(summary(), (std::vector<std::pair<std::uint16_t, bool>> {{0x5A, true}, {0x11, true}}));
+
+  input::testing::set_keyboard_sink({});
+  input::testing::reset_keyboard_state();
+}
+
+TEST_F(InputGamepadSessionTest, AdvertisesPencilGesturesOnlyWhenTheyCanBeHandled) {
+  config::input.apple_pencil_gesture = "disabled";
+  EXPECT_FALSE(input::apple_pencil_gestures_enabled());
+
+  config::input.apple_pencil_gesture = "key";
+  config::input.apple_pencil_gesture_keys.clear();
+  EXPECT_FALSE(input::apple_pencil_gestures_enabled());
+  config::input.apple_pencil_gesture_keys = {0x45};
+  EXPECT_TRUE(input::apple_pencil_gestures_enabled());
+  config::input.keyboard = false;
+  EXPECT_FALSE(input::apple_pencil_gestures_enabled());
+
+  config::input.apple_pencil_gesture = "pen_button_1";
+  config::input.mouse = false;
+  EXPECT_FALSE(input::apple_pencil_gestures_enabled());
 }
 
 TEST_F(InputGamepadSessionTest, ReusesGamepadsAcrossPauseAndDestroysThemOnTermination) {

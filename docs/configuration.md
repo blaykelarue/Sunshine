@@ -767,6 +767,76 @@ supported on the current platform.
     </tr>
 </table>
 
+### apple_pencil_gesture
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            What an Apple Pencil double-tap, or a Pencil Pro squeeze, from VoidLink does. A double-tap presses
+            and releases; a squeeze holds until it ends.
+            <br>
+            VoidLink only sends these when its own Pencil double-tap and squeeze shortcuts are turned off.
+            With its shortcuts on, it sends their keys itself and this setting has no effect.
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            disabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            apple_pencil_gesture = pen_button_1
+            @endcode</td>
+    </tr>
+    <tr>
+        <td rowspan="4">Choices</td>
+        <td>disabled</td>
+        <td>Do nothing.</td>
+    </tr>
+    <tr>
+        <td>pen_button_1</td>
+        <td>Press the virtual pen's first side button, at the Pencil's position. Drawing apps let you assign it to a tool. Requires `native_pen_touch`.</td>
+    </tr>
+    <tr>
+        <td>pen_button_2</td>
+        <td>Press the virtual pen's second side button. Requires `native_pen_touch`.</td>
+    </tr>
+    <tr>
+        <td>key</td>
+        <td>Press the keys in `apple_pencil_gesture_key`. Requires `keyboard`.</td>
+    </tr>
+</table>
+
+### apple_pencil_gesture_key
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            The keys `apple_pencil_gesture` presses when set to `key`, joined with `+`
+            and pressed in order (released in reverse). Names are case-insensitive: `Ctrl`, `Shift`, `Alt`,
+            `Meta`, letters, digits, `F1`-`F24`, `Space`, `Tab`, `Enter`, `Escape`, `Backspace`, `Delete`,
+            `Insert`, `Home`, `End`, `PageUp`, `PageDown`, `Left`, `Right`, `Up`, `Down` and the punctuation
+            keys `[ ] - = , . / ; ' ` \`.
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            apple_pencil_gesture_key = Ctrl+Z
+            @endcode</td>
+    </tr>
+</table>
+
 ### keybindings
 
 <table>

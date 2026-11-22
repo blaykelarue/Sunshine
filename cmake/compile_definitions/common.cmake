@@ -181,6 +181,7 @@ set(SUNSHINE_TARGET_FILES
         "${CMAKE_SOURCE_DIR}/src/mic_mixer.h"
         "${CMAKE_SOURCE_DIR}/src/mic_redirect.cpp"
         "${CMAKE_SOURCE_DIR}/src/mic_redirect.h"
+        "${CMAKE_SOURCE_DIR}/src/apple_pencil_gesture.h"
         "${CMAKE_SOURCE_DIR}/src/pen_barrel_roll.h"
         "${CMAKE_SOURCE_DIR}/src/touchpad_wire.h"
         "${CMAKE_SOURCE_DIR}/src/platform/common.h"

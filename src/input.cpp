@@ -28,6 +28,7 @@ extern "C" {
 #include <boost/endian/buffers.hpp>
 
 // local includes
+#include "apple_pencil_gesture.h"
 #include "config.h"
 #include "globals.h"
 #include "input.h"
@@ -307,6 +308,15 @@ namespace input {
 
     int32_t accumulated_vscroll_delta;  ///< Accumulated vscroll delta.
     int32_t accumulated_hscroll_delta;  ///< Accumulated hscroll delta.
+
+    SS_PEN_PACKET last_pen {};  ///< Last pen packet forwarded, so a Pencil gesture can repeat it with a side button changed.
+    bool pen_in_range = false;  ///< Whether the pen is hovering or touching, as of `last_pen`.
+    std::uint64_t pen_packet_count = 0;  ///< Pen packets forwarded so far, to tell whether real pen input arrived during a gesture.
+    bool gesture_held = false;  ///< Whether a Pencil gesture's side button or keys are down.
+    std::uint8_t gesture_pen_buttons = 0;  ///< Pen side buttons held by a Pencil gesture; added to every pen packet.
+    std::vector<std::uint16_t> gesture_keys;  ///< Keys held by a Pencil gesture, in press order.
+    bool gesture_brought_pen_in_range = false;  ///< Whether the held gesture moved an out-of-range pen into hover.
+    std::uint64_t gesture_pen_packet_count = 0;  ///< `pen_packet_count` right after the gesture pressed its button.
   };
 
   /**
@@ -697,6 +707,9 @@ namespace input {
       case pen_barrel_roll::magic:
         print(&((pen_barrel_roll::packet_t *) payload)->pen);
         BOOST_LOG(debug) << "barrelRoll ["sv << util::endian::little(((pen_barrel_roll::packet_t *) payload)->barrelRoll) << ']';
+        break;
+      case apple_pencil_gesture::magic:
+        BOOST_LOG(debug) << "Apple Pencil gesture packet: eventType ["sv << (uint32_t) ((apple_pencil_gesture::packet_t *) payload)->eventType << ']';
         break;
       case SS_CONTROLLER_ARRIVAL_MAGIC:
         print((PSS_CONTROLLER_ARRIVAL_PACKET) payload);
@@ -1492,6 +1505,12 @@ namespace input {
    * @param barrel_roll Little-endian barrel twist from a VoidLink barrel roll packet, or unknown.
    */
   void passthrough(std::shared_ptr<input_t> &input, PSS_PEN_PACKET packet, std::uint16_t barrel_roll = pen_barrel_roll::unknown) {
+    // A side button held by a Pencil squeeze stays down through real pen input
+    packet->penButtons |= input->gesture_pen_buttons;
+    input->last_pen = *packet;
+    input->pen_in_range = packet->eventType == LI_TOUCH_EVENT_DOWN || packet->eventType == LI_TOUCH_EVENT_MOVE || packet->eventType == LI_TOUCH_EVENT_HOVER;
+    ++input->pen_packet_count;
+
     const auto pointer_data = prepare_absolute_pointer_data(input, packet);
     if (!pointer_data) {
       return;
@@ -1515,6 +1534,150 @@ namespace input {
     }
 
     platf::pen_update(input->client_context.get(), pointer_data->touch_port, pen);
+  }
+
+  bool apple_pencil_gestures_enabled() {
+    const auto &mode = config::input.apple_pencil_gesture;
+    if (mode == "key"sv) {
+      return config::input.keyboard && !config::input.apple_pencil_gesture_keys.empty();
+    }
+    if (mode == "pen_button_1"sv || mode == "pen_button_2"sv) {
+      return config::input.mouse && (platf::get_capabilities() & platf::platform_caps::pen_touch);
+    }
+    return false;
+  }
+
+  /**
+   * @brief Press or release one key of a Pencil gesture's key combo, like a key from the client.
+   * @param input The input context pointer.
+   * @param key_code Virtual-key code.
+   * @param release Whether to release the key.
+   */
+  void send_gesture_key(std::shared_ptr<input_t> &input, std::uint16_t key_code, bool release) {
+    NV_KEYBOARD_PACKET packet {};
+    packet.header.size = util::endian::big<std::uint32_t>(sizeof(packet) - sizeof(packet.header.size));
+    packet.header.magic = util::endian::little<std::uint32_t>(release ? KEY_UP_EVENT_MAGIC : KEY_DOWN_EVENT_MAGIC);
+    packet.keyCode = static_cast<short>(key_code);
+    passthrough(input, &packet);
+  }
+
+  /**
+   * @brief Repeat the last pen packet so the platform sees the gesture's side buttons change.
+   * @param input The input context pointer.
+   * @param event_type Event type for the repeated packet.
+   */
+  void resend_last_pen(std::shared_ptr<input_t> &input, std::uint8_t event_type) {
+    auto pen = input->last_pen;
+    pen.eventType = event_type;
+    pen.penButtons = 0;  // passthrough() adds the buttons the gesture holds
+    passthrough(input, &pen);
+  }
+
+  /**
+   * @brief Event type that repeats the last in-range pen packet without changing tip contact.
+   * @param input The input context pointer.
+   * @return The last pen event type, with a tip press turned into a move since the tip is already down.
+   */
+  std::uint8_t in_range_pen_event(const std::shared_ptr<input_t> &input) {
+    return input->last_pen.eventType == LI_TOUCH_EVENT_DOWN ? LI_TOUCH_EVENT_MOVE : input->last_pen.eventType;
+  }
+
+  /**
+   * @brief Press the configured side button or key combo for a Pencil gesture.
+   * @param input The input context pointer.
+   * @param packet The gesture packet, for the Pencil's position.
+   */
+  void press_pencil_gesture(std::shared_ptr<input_t> &input, const apple_pencil_gesture::packet_t *packet) {
+    if (input->gesture_held) {
+      return;
+    }
+    input->gesture_held = true;
+
+    if (config::input.apple_pencil_gesture == "key"sv) {
+      input->gesture_keys = config::input.apple_pencil_gesture_keys;
+      for (const auto key : input->gesture_keys) {
+        send_gesture_key(input, key, false);
+      }
+      return;
+    }
+
+    // Tablet button events only count while the pen is in range, so hover it over the Pencil's position first
+    if (!input->pen_in_range) {
+      SS_PEN_PACKET hover {};
+      hover.header.size = util::endian::big<std::uint32_t>(sizeof(hover) - sizeof(hover.header.size));
+      hover.header.magic = util::endian::little<std::uint32_t>(SS_PEN_MAGIC);
+      hover.eventType = LI_TOUCH_EVENT_HOVER;
+      hover.toolType = LI_TOOL_TYPE_PEN;
+      std::memcpy(hover.x, packet->x, sizeof(hover.x));
+      std::memcpy(hover.y, packet->y, sizeof(hover.y));
+      hover.rotation = util::endian::little<std::uint16_t>(LI_ROT_UNKNOWN);
+      hover.tilt = LI_TILT_UNKNOWN;
+      passthrough(input, &hover);
+      input->gesture_brought_pen_in_range = true;
+    }
+    input->gesture_pen_buttons = config::input.apple_pencil_gesture == "pen_button_2"sv ? LI_PEN_BUTTON_SECONDARY : LI_PEN_BUTTON_PRIMARY;
+    resend_last_pen(input, in_range_pen_event(input));
+    input->gesture_pen_packet_count = input->pen_packet_count;
+  }
+
+  /**
+   * @brief Release what press_pencil_gesture() pressed.
+   * @param input The input context pointer.
+   */
+  void release_pencil_gesture(std::shared_ptr<input_t> &input) {
+    if (!input->gesture_held) {
+      return;
+    }
+    input->gesture_held = false;
+
+    if (!input->gesture_keys.empty()) {
+      for (auto key = input->gesture_keys.rbegin(); key != input->gesture_keys.rend(); ++key) {
+        send_gesture_key(input, *key, true);
+      }
+      input->gesture_keys.clear();
+      return;
+    }
+
+    // The pen leaves range again if it was out of range, or if the gesture brought it in and no real pen input arrived since
+    const bool was_in_range = input->pen_in_range;
+    const bool leave = !was_in_range || (input->gesture_brought_pen_in_range && input->pen_packet_count == input->gesture_pen_packet_count);
+    input->gesture_brought_pen_in_range = false;
+    input->gesture_pen_buttons = 0;
+    resend_last_pen(input, was_in_range ? in_range_pen_event(input) : LI_TOUCH_EVENT_HOVER);
+    if (leave) {
+      resend_last_pen(input, LI_TOUCH_EVENT_HOVER_LEAVE);
+    }
+  }
+
+  /**
+   * @brief Called to handle an Apple Pencil double-tap or squeeze from VoidLink.
+   * @param input The input context pointer.
+   * @param packet The gesture packet.
+   */
+  void passthrough(std::shared_ptr<input_t> &input, apple_pencil_gesture::packet_t *packet) {
+    // Only presses check the setting, so a squeeze held across a settings change still releases
+    const auto &mode = config::input.apple_pencil_gesture;
+    const bool can_press = mode != "disabled"sv && (mode != "key"sv || !config::input.apple_pencil_gesture_keys.empty());
+
+    switch (packet->eventType) {
+      case apple_pencil_gesture::double_tap:
+        if (can_press && !input->gesture_held) {
+          press_pencil_gesture(input, packet);
+          release_pencil_gesture(input);
+        }
+        break;
+      case apple_pencil_gesture::squeeze_begin:
+        if (can_press) {
+          press_pencil_gesture(input, packet);
+        }
+        break;
+      case apple_pencil_gesture::squeeze_end:
+      case apple_pencil_gesture::squeeze_cancel:
+        release_pencil_gesture(input);
+        break;
+      default:
+        break;
+    }
   }
 
   /**
@@ -1793,6 +1956,8 @@ namespace input {
         return validate_fixed_input_packet<touchpad_wire::packet_t>(packet, declared_size);
       case touchpad_wire::frame_magic:
         return validate_fixed_input_packet<touchpad_wire::frame_packet_t>(packet, declared_size);
+      case apple_pencil_gesture::magic:
+        return validate_fixed_input_packet<apple_pencil_gesture::packet_t>(packet, declared_size);
       case SS_CONTROLLER_ARRIVAL_MAGIC:
         return validate_fixed_input_packet<SS_CONTROLLER_ARRIVAL_PACKET>(packet, declared_size);
       case SS_CONTROLLER_TOUCH_MAGIC:
@@ -2226,6 +2391,9 @@ namespace input {
       case touchpad_wire::frame_magic:
         passthrough(input, (touchpad_wire::frame_packet_t *) payload);
         break;
+      case apple_pencil_gesture::magic:
+        passthrough(input, (apple_pencil_gesture::packet_t *) payload);
+        break;
       case SS_CONTROLLER_ARRIVAL_MAGIC:
         passthrough(input, (PSS_CONTROLLER_ARRIVAL_PACKET) payload);
         break;
@@ -2528,6 +2696,10 @@ namespace input {
 
     void process_next_input_packet(const std::shared_ptr<input_t> &input) {
       passthrough_next_message(input);
+    }
+
+    platf::client_input_t *client_input(const std::shared_ptr<input_t> &input) {
+      return input->client_context.get();
     }
   }  // namespace testing
 #endif

@@ -7,9 +7,12 @@
 #include "../tests_common.h"
 
 // standard includes
+#include <cstdint>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 // local includes
 #include <src/config.h>
@@ -123,4 +126,20 @@ TEST_F(ConfigPersistenceTest, SelectsAllDriversOnlyForLicensedUsersWithoutAPrefe
 
   EXPECT_FALSE(config::select_all_gamepad_drivers_if_licensed(true));
   EXPECT_EQ(file_handler::read_file(config_file().string().c_str()), "gamepad_driver = all\n");
+}
+
+TEST(KeyComboTest, ParsesNamesCaseInsensitivelyInPressOrder) {
+  EXPECT_EQ(config::parse_key_combo("e"), (std::vector<std::uint16_t> {0x45}));
+  EXPECT_EQ(config::parse_key_combo(" Ctrl + shift+Z "), (std::vector<std::uint16_t> {0x11, 0x10, 0x5A}));
+  EXPECT_EQ(config::parse_key_combo("Alt+F4"), (std::vector<std::uint16_t> {0x12, 0x73}));
+  EXPECT_EQ(config::parse_key_combo("F24"), (std::vector<std::uint16_t> {0x87}));
+  EXPECT_EQ(config::parse_key_combo("Meta+7"), (std::vector<std::uint16_t> {0x5B, 0x37}));
+  EXPECT_EQ(config::parse_key_combo("Ctrl+["), (std::vector<std::uint16_t> {0x11, 0xDB}));
+  EXPECT_EQ(config::parse_key_combo("pagedown"), (std::vector<std::uint16_t> {0x22}));
+}
+
+TEST(KeyComboTest, RejectsUnknownEmptyAndRepeatedKeys) {
+  for (const auto combo : {""sv, "Ctrl+"sv, "+Z"sv, "Ctrl++Z"sv, "Hyper+Z"sv, "F0"sv, "F25"sv, "F1x"sv, "Ctrl+Control"sv, "Z+z"sv}) {
+    EXPECT_FALSE(config::parse_key_combo(combo).has_value()) << "combo=" << combo;
+  }
 }

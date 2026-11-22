@@ -934,6 +934,11 @@ namespace rtsp_stream {
     }
 #endif
 
+    // VoidLink sends Apple Pencil double-tap and squeeze (when its own Pencil shortcuts are off) once the host advertises it
+    if (input::apple_pencil_gestures_enabled()) {
+      ss << "a=x-ss-general.applePencilSideButtons:1" << std::endl;
+    }
+
     // Always request new control stream encryption if the client supports it
     uint32_t encryption_flags_supported = SS_ENC_CONTROL_V2 | SS_ENC_AUDIO;
     uint32_t encryption_flags_requested = SS_ENC_CONTROL_V2;

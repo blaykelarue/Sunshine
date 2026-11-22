@@ -7,6 +7,7 @@
 // standard includes
 #include <bitset>
 #include <chrono>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -307,7 +308,27 @@ namespace config {
 
     bool high_resolution_scrolling;  ///< Enable high-resolution mouse-wheel events.
     bool native_pen_touch;  ///< Enable native pen and touch injection.
+
+    /**
+     * @brief What an Apple Pencil double-tap or squeeze from VoidLink does.
+     *
+     * "disabled", "pen_button_1" (primary side button), "pen_button_2" (secondary side button) or "key".
+     */
+    std::string apple_pencil_gesture;
+    std::vector<std::uint16_t> apple_pencil_gesture_keys;  ///< Key combo for "key", as virtual-key codes in press order.
   };
+
+  /**
+   * @brief Parse a key combo such as "Ctrl+Shift+Z" into virtual-key codes in press order.
+   *
+   * Names are case-insensitive and joined with '+': modifiers (Ctrl, Shift, Alt, Meta), letters, digits,
+   * F1-F24, named keys (Space, Tab, Enter, Escape, Backspace, Delete, Insert, Home, End, PageUp,
+   * PageDown, Left, Right, Up, Down) and the punctuation keys [ ] - = , . / ; ' ` \.
+   *
+   * @param combo Key combo text.
+   * @return The key codes, or nothing if a name is unknown, repeated, or the combo is empty.
+   */
+  std::optional<std::vector<std::uint16_t>> parse_key_combo(std::string_view combo);
 
   namespace flag {
     /**

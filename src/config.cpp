@@ -4,6 +4,8 @@
  */
 // standard includes
 #include <algorithm>
+#include <cctype>
+#include <charconv>
 #include <filesystem>
 #include <format>
 #include <fstream>
@@ -868,6 +870,8 @@ namespace config {
     true,  // always send scancodes
     true,  // high resolution scrolling
     true,  // native pen/touch support
+    "disabled",  // apple_pencil_gesture
+    {},  // apple_pencil_gesture_keys
   };
 
   /**
@@ -1568,6 +1572,82 @@ namespace config {
     return ret;
   }
 
+  std::optional<std::vector<std::uint16_t>> parse_key_combo(std::string_view combo) {
+    // Windows virtual-key codes, which Sunshine uses for keyboard input on every platform
+    static const std::unordered_map<std::string, std::uint16_t> named_keys {
+      {"ctrl", 0x11},
+      {"control", 0x11},
+      {"shift", 0x10},
+      {"alt", 0x12},
+      {"meta", 0x5B},
+      {"super", 0x5B},
+      {"win", 0x5B},
+      {"space", 0x20},
+      {"tab", 0x09},
+      {"enter", 0x0D},
+      {"return", 0x0D},
+      {"escape", 0x1B},
+      {"esc", 0x1B},
+      {"backspace", 0x08},
+      {"delete", 0x2E},
+      {"del", 0x2E},
+      {"insert", 0x2D},
+      {"home", 0x24},
+      {"end", 0x23},
+      {"pageup", 0x21},
+      {"pagedown", 0x22},
+      {"left", 0x25},
+      {"up", 0x26},
+      {"right", 0x27},
+      {"down", 0x28},
+      {";", 0xBA},
+      {"=", 0xBB},
+      {",", 0xBC},
+      {"-", 0xBD},
+      {".", 0xBE},
+      {"/", 0xBF},
+      {"`", 0xC0},
+      {"[", 0xDB},
+      {"\\", 0xDC},
+      {"]", 0xDD},
+      {"'", 0xDE},
+    };
+
+    std::vector<std::uint16_t> codes;
+    while (true) {
+      const auto separator = combo.find('+');
+      std::string name {combo.substr(0, separator)};
+      std::erase_if(name, [](unsigned char c) {
+        return std::isspace(c);
+      });
+      std::ranges::transform(name, name.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+      });
+
+      std::optional<std::uint16_t> code;
+      if (name.size() == 1 && std::isalnum(static_cast<unsigned char>(name[0]))) {
+        code = static_cast<std::uint16_t>(std::toupper(static_cast<unsigned char>(name[0])));  // 'A'-'Z' and '0'-'9' are their own codes
+      } else if (const auto it = named_keys.find(name); it != named_keys.end()) {
+        code = it->second;
+      } else if (name.size() >= 2 && name[0] == 'f') {
+        int number = 0;
+        const auto [end, error] = std::from_chars(name.data() + 1, name.data() + name.size(), number);
+        if (error == std::errc {} && end == name.data() + name.size() && number >= 1 && number <= 24) {
+          code = static_cast<std::uint16_t>(0x70 + number - 1);  // VK_F1..VK_F24
+        }
+      }
+      if (!code || std::ranges::find(codes, *code) != codes.end()) {
+        return std::nullopt;
+      }
+      codes.push_back(*code);
+
+      if (separator == std::string_view::npos) {
+        return codes;
+      }
+      combo.remove_prefix(separator + 1);
+    }
+  }
+
   /**
    * @brief Get supported gamepad options.
    *
@@ -1852,6 +1932,19 @@ namespace config {
 
     bool_f(vars, "high_resolution_scrolling", input.high_resolution_scrolling);
     bool_f(vars, "native_pen_touch", input.native_pen_touch);
+    string_restricted_f(vars, "apple_pencil_gesture"s, input.apple_pencil_gesture, {"disabled"sv, "pen_button_1"sv, "pen_button_2"sv, "key"sv});
+    std::string apple_pencil_gesture_key;
+    string_f(vars, "apple_pencil_gesture_key"s, apple_pencil_gesture_key);
+    if (!apple_pencil_gesture_key.empty()) {
+      if (auto keys = parse_key_combo(apple_pencil_gesture_key)) {
+        input.apple_pencil_gesture_keys = std::move(*keys);
+      } else {
+        BOOST_LOG(warning) << "config: Ignoring invalid apple_pencil_gesture_key ["sv << apple_pencil_gesture_key << ']';
+      }
+    }
+    if (input.apple_pencil_gesture == "key"sv && input.apple_pencil_gesture_keys.empty()) {
+      BOOST_LOG(warning) << "config: apple_pencil_gesture is \"key\" but apple_pencil_gesture_key has no valid key combo; Pencil gestures are disabled"sv;
+    }
 
     bool_f(vars, "notify_pre_releases", sunshine.notify_pre_releases);
     bool_f(vars, "system_tray", sunshine.system_tray);

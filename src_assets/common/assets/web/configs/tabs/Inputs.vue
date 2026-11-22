@@ -218,6 +218,26 @@ watch(
               v-model="config.native_pen_touch"
               default="true"
     ></Checkbox>
+
+    <!-- Apple Pencil double-tap and squeeze -->
+    <div class="mb-3">
+      <label for="apple_pencil_gesture" class="form-label">{{ $t('config.apple_pencil_gesture') }}</label>
+      <select id="apple_pencil_gesture" class="form-select" v-model="config.apple_pencil_gesture">
+        <option value="disabled">{{ $t('config.apple_pencil_gesture_disabled') }}</option>
+        <option value="pen_button_1" v-if="config.mouse === 'enabled' && config.native_pen_touch === 'enabled'">{{ $t('config.apple_pencil_gesture_pen_button_1') }}</option>
+        <option value="pen_button_2" v-if="config.mouse === 'enabled' && config.native_pen_touch === 'enabled'">{{ $t('config.apple_pencil_gesture_pen_button_2') }}</option>
+        <option value="key" v-if="config.keyboard === 'enabled'">{{ $t('config.apple_pencil_gesture_key_mode') }}</option>
+      </select>
+      <div class="form-text">{{ $t('config.apple_pencil_gesture_desc') }}</div>
+    </div>
+
+    <!-- Key combo for Apple Pencil gestures -->
+    <div class="mb-3" v-if="config.apple_pencil_gesture === 'key'">
+      <label for="apple_pencil_gesture_key" class="form-label">{{ $t('config.apple_pencil_gesture_key') }}</label>
+      <input type="text" class="form-control monospace" id="apple_pencil_gesture_key" placeholder="E"
+             v-model="config.apple_pencil_gesture_key" />
+      <div class="form-text">{{ $t('config.apple_pencil_gesture_key_desc') }}</div>
+    </div>
   </div>
 </template>
 

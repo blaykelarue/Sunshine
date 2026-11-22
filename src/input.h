@@ -84,6 +84,16 @@ namespace input {
    */
   std::shared_ptr<input_t> alloc(safe::mail_t mail, std::string session_id);
 
+  /**
+   * @brief Return whether Sunshine handles Apple Pencil double-tap and squeeze from VoidLink.
+   *
+   * Decides whether clients are told the host accepts the gestures (x-ss-general.applePencilSideButtons).
+   *
+   * @return True when `apple_pencil_gesture` is set to a pen side button the platform can press, or to a
+   *         valid key combo with keyboard input enabled.
+   */
+  bool apple_pencil_gestures_enabled();
+
 #ifdef SUNSHINE_TESTS
   namespace testing {
     /**
@@ -175,6 +185,14 @@ namespace input {
      * @param input Shared stream input state.
      */
     void process_next_input_packet(const std::shared_ptr<input_t> &input);
+
+    /**
+     * @brief Return a stream's per-client platform input context, for inspecting its virtual devices.
+     *
+     * @param input Shared stream input state.
+     * @return The client input context.
+     */
+    platf::client_input_t *client_input(const std::shared_ptr<input_t> &input);
   }  // namespace testing
 #endif
 
